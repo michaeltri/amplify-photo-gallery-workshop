@@ -4,12 +4,16 @@ defaultContentLanguage = "en"
 title = "Amplify / AppSync / React Workshop"
 theme = "learn"
 uglyurls = true
-googleAnalytics = "UA-129511631-1"
 sectionPagesMenu = "main"
 pygmentsCodeFences = true
 #pygmentsCodeFencesGuessSyntax = true
 #pygmentsStyle = "monokai"
 
+[markup]
+defaultMarkdownHandler = "blackfriday"
+
+[markup.goldmark.renderer]
+unsafe= true
 
 [blackfriday]
 hrefTargetBlank = true
