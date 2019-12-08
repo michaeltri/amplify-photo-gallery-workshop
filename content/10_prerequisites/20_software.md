@@ -11,18 +11,19 @@ Before we begin coding, there are a few things we need to install, update, and c
 In the Cloud9 terminal, **run the following commands** to install and update some software we'll be using for this workshop:
 
 ```bash
-# Update the AWS CLI
+# Update the AWS CLI to the latest version
 pip install --user --upgrade awscli
 
-# Install and use Node.js v8.11 (to match AWS Lambda)
-nvm install v8.11.0
-nvm alias default v8.11.0
+# Install latest LTS version of Node.js
+nvm install --lts 12
+nvm alias default 12
 
 # Install the AWS Amplify CLI
-npm install -g @aws-amplify/cli@1.12.0
+npm install -g @aws-amplify/cli
 
 # Install jq
 sudo yum install jq -y
+
 ```
 
 {{% notice note %}}
@@ -31,11 +32,21 @@ These commands will take a few minutes to finish.
 
 ### Configuring a default region 
 
-A best practice is to deploy your infrastructure close to your customers, let's configure a default AWS region for this workshop : Northern Virginia (*us-east-1*) for North America or Ireland (*eu-west-1*) for Europe.
+A best practice is to deploy your infrastructure close to your customers, let's configure a default AWS region for this workshop : **Frankfurt** (*eu-central-1*) for Europe or Northern Virginia (*us-east-1*) for North America.
 
 **Create an AWS config file**, run:
 
 {{% tabs %}}
+
+{{% tab "eu-central-1" "Frankfurt" %}}
+```bash
+cat <<END > ~/.aws/config
+[default]
+region=eu-central-1
+END
+```
+{{% /tab %}}
+
 {{% tab "us-east-1" "Virginia" %}}
 ```bash
 cat <<END > ~/.aws/config

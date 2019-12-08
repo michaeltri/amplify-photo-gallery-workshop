@@ -24,8 +24,11 @@ You can learn more about create-react-app at [https://github.com/facebook/create
 
 Before we start writing our UI, we'll also include Semantic UI components for React to give us components that will help make our interface look a bit nicer.
 
-**In the photoalbums directory, run** `npm install --save semantic-ui-react`
+**In the photoalbums directory, run** 
 
+```sh
+npm install --save aws-amplify aws-amplify-react @reach/router uuid semantic-ui-react semantic-ui-css
+```
 Then, **edit public/index.html** and add this stylesheet link:
 
 ```html
