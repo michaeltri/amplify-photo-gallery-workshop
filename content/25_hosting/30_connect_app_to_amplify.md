@@ -1,5 +1,5 @@
 +++
-title = "Configure Source Control"
+title = "Connect to Amplify"
 chapter = false
 weight = 20
 +++
