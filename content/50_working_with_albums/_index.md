@@ -2,7 +2,7 @@
 title = "Working With Albums"
 chapter = true
 weight = 50
-pre = "<b>5. </b>"
+pre = "<b>todo </b>"
 +++
 
 # Working With Albums

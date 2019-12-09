@@ -2,7 +2,7 @@
 title = "Bonus Content"
 chapter = true
 weight = 140
-pre = "<b>11. </b>"
+pre = "<b>todo </b>"
 +++
 
 # Bonus Content

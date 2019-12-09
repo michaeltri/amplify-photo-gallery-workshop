@@ -29,16 +29,19 @@ Before we start writing our UI, we'll also include Semantic UI components for Re
 ```sh
 npm install --save aws-amplify aws-amplify-react @reach/router uuid semantic-ui-react semantic-ui-css
 ```
-Then, **edit public/index.html** and add this stylesheet link:
+Then, **edit src/index.js** and import the semantic-ui stylesheet:
 
-```html
-<head>
-    <!-- ... --> 
+```js
+import React from 'react';
+import ReactDOM from 'react-dom';
+import './index.css';
+import App from './App';
+import * as serviceWorker from './serviceWorker';
 
-    <link rel="stylesheet" href="//cdnjs.cloudflare.com/ajax/libs/semantic-ui/2.3.3/semantic.min.css"></link>
+import 'semantic-ui-css/semantic.min.css'
 
-    <!-- ... --> 
-</head>
+ReactDOM.render(<App />, document.getElementById('root'));
+... 
 ```
 
 ### Starting the App
@@ -57,32 +60,3 @@ If you'd like, you can also **pop the preview to a new window**:
 Finally, **open another terminal window**. We'll leave this first terminal alone since it's running the web server process.
 
 ![new terminal](/images/c9_new_terminal.png)
-
-### Simplifying markup
-
-Next, we'll want to start with a clean slate.
-
-**Edit src/App.js** and change it to display a simple 'Hello World' message. **Replace the existing content of the file with**:
-
-```jsx
-// src/App.js
-
-import React, { Component } from 'react';
-import { Header } from 'semantic-ui-react';
-
-class App extends Component { 
-    render() { 
-        return (
-            <div>
-                <Header as='h1'>Hello World!</Header>
-            </div>
-        );
-    }
-}
-
-export default App;
-```
-
-{{% notice note %}}
-At this point, the browser should automatically refresh and show a much simpler page, with just some text that says 'Hello World'. It's not much to look at yet, but it's good to start with as little markup as possible.
-{{% /notice %}}
