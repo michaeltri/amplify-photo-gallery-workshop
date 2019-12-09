@@ -2,7 +2,7 @@
 title = "Adding Authentication"
 chapter = true
 weight = 30
-pre = "<b>todo </b>"
+pre = "<b>4. </b>"
 +++
 
 # Adding Authentication
