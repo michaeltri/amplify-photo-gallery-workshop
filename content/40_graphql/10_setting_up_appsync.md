@@ -6,7 +6,7 @@ weight = 10
 
 Now that we have authenticated users, let's make an API for creating albums. These albums won't have any photos in them just yet, just a name and an association with the username that created them, but it's another clear step toward putting our app together.
 
-{{% notice info %}}
+{{% notice note %}}
 To build our API we'll use [AWS AppSync](https://aws.amazon.com/appsync/), a managed GraphQL service for building data-driven apps. If you're not yet familiar with the basics of GraphQL, you should take a few minutes and check out [https://graphql.github.io/learn/](https://graphql.github.io/learn/) before continuing, or use the site to refer back to when you have questions as you read along.
 {{% /notice %}}
 
@@ -27,6 +27,18 @@ photoalbums
 ? Choose an authorization type for the API
 Amazon Cognito User Pool
 
+? Do you want to configure advanced settings for this GraphQL API
+Yes, I want to make some additional changes
+
+? Configure additional auth types
+Yes
+
+? Choose the additional authorization types that you want to configure for the API
+IAM
+
+? Configure conflict detetction
+No
+
 ? Do you have an annotated GraphQL schema? 
 No
 
@@ -34,10 +46,10 @@ No
 Yes
 
 ? What best describes your project: 
-One-to-many relationship (e.g., “Blogs” with “Posts” and “Comments”)
+Single object with fields (e.g., “Todo” with ID, name, description)
 
 ? Do you want to edit the schema now? 
-Yes
+No
 
 Please manually edit the file created at /home/ec2-user/environment/photoalbums/amplify/backend/api/photoalbums/schema.graphql
 
@@ -54,24 +66,50 @@ Below is a schema that will suit our needs for storing and querying Albums and P
     ```graphql
     # amplify/backend/api/photoalbums/schema.graphql
 
-    type Album @model @auth(rules: [{allow: owner}]) {
-        id: ID!
-        name: String!
-        photos: [Photo] @connection(name: "AlbumPhotos")
+    type Album
+      @model
+      @auth(rules: [{ allow: owner }])
+    {
+      id: ID!
+      owner: ID!
+      ownerId: String!
+      name: String!
+      createdAt: String
+      updatedAt: String
+      photos: [Photo] @connection(name: "AlbumPhotos", sortField: "createdAt")
     }
 
-    type Photo @model @auth(rules: [{allow: owner}]) {
-        id: ID!
-        album: Album @connection(name: "AlbumPhotos")
-        bucket: String!
-        fullsize: PhotoS3Info!
-        thumbnail: PhotoS3Info!
+    type Photo
+      @model
+      @auth(
+        rules: [
+          { allow: owner },
+          { allow: private, provider: iam, operations: [ read, update ] }
+        ]
+      )
+    {
+      id: ID!
+      createdAt: String
+      updatedAt: String
+      album: Album @connection(name: "AlbumPhotos", sortField: "createdAt")
+      fullsize: S3Object!
+      thumbnail: S3Object
+      contentType: String
+      gps: GPS
+      height: Int
+      width: Int
     }
 
-    type PhotoS3Info {
-        key: String!
-        width: Int!
-        height: Int!
+    type S3Object @aws_iam @aws_cognito_user_pools {
+      region: String!
+      bucket: String!
+      key: String!
+    }
+
+    type GPS {
+      latitude: String!
+      longitude: String!
+      altitude: Float!
     }
     ```
 
@@ -88,3 +126,5 @@ At this point, without having to write any code, we now have a GraphQL API that 
 <br/><br/>
 But don't worry, the way AWS AppSync is resolving fields into data isn't hidden from us. Each resolver that was automatically generated is available for us to edit as we see fit, and we'll get to that later. For now, let's try out adding some albums and then retrieving them all as a list.
 {{% /notice %}}
+
+### Todo show amplify console for api

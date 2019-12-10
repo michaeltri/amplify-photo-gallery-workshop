@@ -15,7 +15,7 @@ First, we'll use the Amplify CLI to enable storage for our app. This will create
 2. **Select 'Content (Images, audio, video, etc.)'** at the prompt
 
 3. **Enter** `photoalbumsstorage` for the friendly category name
-4. ****accept default** for the bucket name
+4. **accept default** for the bucket name
 
 4. **Chose Auth users only** when asked who should have access. Configure it so that **authenticated users** have access with **create/update, read, and delete access** (use the spacebar to toggle on/off, the arrow keys to move, and Enter to continue).
 
@@ -23,28 +23,28 @@ First, we'll use the Amplify CLI to enable storage for our app. This will create
 
 (Later, we will and add a Lambda function that will be triggered when a new photo is added. The function will create a thumbnail of the uploaded image and add EXIF data to our album.)
 
-    Here is sample output with responses:
+Here is sample output with responses:
 
-    ```text
-    $ amplify add storage
+```text
+$ amplify add storage
 
-    ? Please select from one of the below mentioned services:
-    
-    Content (Images, audio, video, etc.)
+? Please select from one of the below mentioned services:
 
-    ? Please provide a friendly name for your resource that will be used to label this category in the project: photoalbumsstorage
+Content (Images, audio, video, etc.)
 
-    ? Please provide bucket name: <accept the default value>
+? Please provide a friendly name for your resource that will be used to label this category in the project: photoalbumsstorage
 
-    ? Who should have access: Auth users only
+? Please provide bucket name: <accept the default value>
 
-    ? What kind of access do you want for Authenticated users? 
-    ◉ create/update
-    ◉ read
-    ◉ delete
+? Who should have access: Auth users only
 
-    ? Do you want to add a Lambda Trigger for your S3 Bucket? N
-    ```
+? What kind of access do you want for Authenticated users? 
+◉ create/update
+◉ read
+◉ delete
+
+? Do you want to add a Lambda Trigger for your S3 Bucket? N
+```
 
 Now we'll have Amplify modify our cloud environment, provisioning the storage resources we just added.
 

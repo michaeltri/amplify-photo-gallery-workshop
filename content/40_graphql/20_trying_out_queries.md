@@ -5,6 +5,8 @@ weight = 20
 +++
 
 
+### TODO sample queries updated screen of app sync ui
+
 **Open the AWS Console**, browse to AppSync, make sure you're in your chosen region and **click into the photoalbums-master API**. Now we can start poking around with the API.
 
 **Click Queries** in the sidebar on the left.
