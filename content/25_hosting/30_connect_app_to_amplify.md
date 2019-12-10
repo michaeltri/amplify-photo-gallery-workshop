@@ -16,11 +16,7 @@ Select your newly created repository (AmplifyPhotos) and branch (master). Click 
 
 ![Add Branch](/images/3_select_repository.png)
 
-We need to make two changes to the default build settings, both in the __Existing Amplify backend detected__ section. First, for the backend "Select a backend environment" select "dev".
-
-![Create Amplify Service Role](/images/4_select_dev_backend.png)
-
-Second, if you have not used Amplify Console before, we need to create a new service role. Click the "Create new role" button. A new tab titled "Create role" will open. Follow the Role creation flow as shown in the following screens, clicking on the blue button in the lower corner on each step (accept default selections):
+If you have not used Amplify Console before, we need to create a new service role. Click the "Create new role" button. A new tab titled "Create role" will open. Follow the Role creation flow as shown in the following screens, clicking on the blue button in the lower corner on each step (accept default selections):
 
 ![Create Amplify Service Role](/images/4_create_role_iam_flow.png)
 
