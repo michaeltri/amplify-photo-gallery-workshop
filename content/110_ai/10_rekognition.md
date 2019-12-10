@@ -4,182 +4,369 @@ chapter = false
 weight = 10
 +++
 
-It would be great if we could find images without having to manually tag them with descriptions of their contents. Luckily, adding this feature is pretty easy thanks to [Amazon Rekognition](https://aws.amazon.com/rekognition/image-features/). We can use the [DetectLabels API](https://docs.aws.amazon.com/rekognition/latest/dg/API_DetectLabels.html) -- if we give it a photo, it will respond with a list of appropriate labels for the image. Perfect!
+In this module, we will use Machine Learning to enhance the application's photo picker. Until now, the application has uploaded the image to S3 immediately on selection. Here, we extend the photo picker to find celebrity faces in the image prior to upload.
 
-{{% notice info %}}
-**Amazon Rekognition's DetectLabels Quick Summary**
-<br/><br/>
-You pass the input image as base64-encoded image bytes or as a reference to an image in an Amazon S3 bucket. If you use the AWS CLI to call Amazon Rekognition operations, passing image bytes is not supported. The image must be either a PNG or JPEG formatted file.
-<br/><br/>
-For each object, scene, and concept the API returns one or more labels. Each label provides the object name, and the level of confidence that the image contains the object. For example, suppose the input image has a lighthouse, the sea, and a rock. The response includes all three labels, one for each object.
-<br/><br/>
-{Name: lighthouse, Confidence: 98.4629}
-<br/>
-{Name: rock,Confidence: 79.2097}
-<br/>
-{Name: sea,Confidence: 75.061}
-{{% /notice %}}
+To get started, add the [Amplify Predictions](https://aws-amplify.github.io/docs/js/predictions) module to the project. When adding Predictions, Amplify will also utilize the Auth module to autorize the application to perform the required actions.
+
+``` bash
+amplify add predictions
+```
+
+* Please select from one of the categories below __Identify__
+* What would you like to identify? __Identify Entities__
+* Provide a friendly name for your resource __ACCEPT DEFAULT VALUE PROVIDED__
+* Would you like use the default configuration? __Advanced Configuration__
+* Would you like to enable celebrity detection? __Yes__
+* Would you like to identify entities from a collection of images? __No__
+* Who should have access? __Auth users only__
+
+> Want to make this application more personal? Experiment with identifying entities from a collection of images.
+
+Add Prediction resources in the cloud by entering the following in the second terminal tab (the React dev server should still be running in the first tab from earlier):
+
+``` bash
+amplify push
+```
+
+The update will take a few minutes, you can proceed while it runs in the background.
+
+To use the Predictions module, we need to add the plug-in to our React application. Open `src/index.js` and modify as follows:
+
+``` diff
+import Amplify from 'aws-amplify';
++ import { AmazonAIPredictionsProvider } from '@aws-amplify/predictions';
+import awsconfig from './aws-exports';
+Amplify.configure(awsconfig);
++ Amplify.addPluggable(new AmazonAIPredictionsProvider());
+```
+
+Next, create a new file at `src/MLPhotoPickerModal.js` and paste the following in the new file. The code defines several new React components that will enhance the photo picker we used earlier. This code is primarily user interface, we will implement the image recognition feature shortly.
+
+__src/MLPhotoPickerModal.js__
+
+``` js
+import React, { useEffect, useReducer, useRef, useState } from 'react';
+import { Button, Dimmer, Divider, Grid, Header, Icon, List, Loader, Modal, Segment } from 'semantic-ui-react';
+import Predictions from '@aws-amplify/predictions';
+
+function PhotoPicker(props) {
+  const fileInput = useRef(null);
+
+  function handleInput(e) {
+    const file = e.target.files[0];
+    if (!file) { return; }
+
+    const { name, size, type } = file;
+    console.log(`Selected file ${name}`);
+
+    const { onPick } = props;
+    if (onPick) {
+      onPick({ file, name, size, type });
+    }
+  }
+
+  return (
+    <Segment placeholder>
+      <Header icon>
+        <Icon name='photo'/>
+        Use Maching Learning to Find Faces
+      </Header>
+      <Button primary onClick={ (e) => fileInput.current.click() }>Select Photo</Button>
+      <input ref={ fileInput } title='Pick a photo'
+            type="file"
+            hidden
+            accept='image/*'
+            onChange={ handleInput }/>
+    </Segment>
+  );
+};
+
+function ResultPane(props) {
+  let { imageSrc, onUpload } = props;
+  const [ isAnalyzing, setIsAnalyzing ] = useState(false);
+  const [ celebrities, setCelebrities ] = useState([]);
+  const [ boundingBoxes, setBoundingBoxes ] = useState([]);
+
+  useEffect(() => {
+    identify(props.file);
+  }, [props.file]);
+
+  async function identify(file) {
+    // TODO: Add Machine Learning
+  }
+
+  function upload() {
+    if (onUpload) {
+      onUpload();
+    }
+  }
+
+  return (
+    <Grid columns={ 2 }>
+      <Grid.Row>
+        <Grid.Column>
+          <ImagePreview src={ imageSrc }
+                isAnalyzing={ isAnalyzing }
+                boundingBoxes={ boundingBoxes }/>
+        </Grid.Column>
+        <Grid.Column>
+          <Header as='h3'>Celebrities</Header>
+          <List bulleted>
+            { celebrities.map((c, i) => (
+              <List.Item key={ i }>{ c }</List.Item>
+            )) }
+          </List>
+
+          <Divider/>
+
+          <div>
+            <Button primary onClick={ upload }>Upload</Button>
+          </div>
+          
+        </Grid.Column>
+      </Grid.Row>
+    </Grid>
+
+  );
+};
+
+function ImagePreview(props) {
+  const { isAnalyzing } = props;
+
+  return (
+    <Segment>
+      <Dimmer.Dimmable dimmed={ isAnalyzing }>
+        <CanvasImage src={ props.src } boundingBoxes={ props.boundingBoxes }/>
+        <Dimmer active={ isAnalyzing }>
+          <Loader>Analyzing...</Loader>
+        </Dimmer>
+      </Dimmer.Dimmable>
+    </Segment>
+  );
+};
 
 
-#### Integrating Rekognition with the Photo Processor Lambda
+function CanvasImage(props) {
+  const { src, boundingBoxes } = props;
+  const canvas = useRef(null);
+  const image = useRef(null);
 
-Let's add Amazon Rekognition integration in to our photo_processor lambda function.
+  useEffect(() => {
+    const cnvs = canvas.current;
+    const ctx = cnvs.getContext('2d');
+    const img = image.current;
 
-**Replace amplify/backend/function/S3Triggerxxxxxxx/src/index.js** with the following version:
-<div style="height: 660px; overflow-y: scroll;">
-{{< highlight js "hl_lines=5 24-38 116 121">}}
-// photoalbums/amplify/backend/function/S3Triggerxxxxxxx/src/index.js
+    img.addEventListener('load', e => {
+      ctx.drawImage(img, 0, 0); // firefox likes this
+    });
 
-const AWS = require('aws-sdk');
-const S3 = new AWS.S3({ signatureVersion: 'v4' });
-const Rekognition = new AWS.Rekognition();
-const DynamoDBDocClient = new AWS.DynamoDB.DocumentClient({apiVersion: '2012-08-10'});
-const uuidv4 = require('uuid/v4');
+    ctx.clearRect(0, 0, cnvs.width, cnvs.height);
+    ctx.drawImage(img, 0, 0); // chrome seems to prefer this approach
+  }, [src]);
 
-/*
-Note: Sharp requires native extensions to be installed in a way that is compatible
-with Amazon Linux (in order to run successfully in a Lambda execution environment).
+  useEffect(() => {
+    const cnvs = canvas.current;
+    const ctx = cnvs.getContext('2d');
+    const img = image.current;
 
-If you're not working in Cloud9, you can follow the instructions on http://sharp.pixelplumbing.com/en/stable/install/#aws-lambda how to install the module and native dependencies.
-*/
-const Sharp = require('sharp');
+    if (!boundingBoxes) { return; }
 
-// We'll expect these environment variables to be defined when the Lambda function is deployed
-const THUMBNAIL_WIDTH = parseInt(process.env.THUMBNAIL_WIDTH, 10);
-const THUMBNAIL_HEIGHT = parseInt(process.env.THUMBNAIL_HEIGHT, 10);
-const DYNAMODB_PHOTOS_TABLE_NAME = process.env.DYNAMODB_PHOTOS_TABLE_ARN.split('/')[1];
+    boundingBoxes.forEach((box) => {
+      ctx.beginPath();
+      ctx.lineWidth = '3';
+      ctx.strokeStyle = 'red';
+      ctx.rect(box.left * img.width,
+          box.top * img.height,
+          box.width * img.width,
+          box.height * img.height);
+      ctx.stroke();
+    });
+  }, [boundingBoxes]);
 
-async function getLabelNames(bucketName, key) {
-  let params = {
-    Image: {
-      S3Object: {
-        Bucket: bucketName, 
-        Name: key
-      }
-    }, 
-    MaxLabels: 50, 
-    MinConfidence: 70
+  return (
+    <div className="image content">
+      <div className="ui medium image">
+        <canvas ref={ canvas } width={300} height={300}/>
+        <img ref={ image } className='ui hidden image' alt='' src={ src }/>
+      </div>
+    </div>
+  );
+};
+
+function MLPhotoPicker(props) {
+  const { open, onClose, onPick, trigger } = props;
+
+  const initalState = {
+    src: '',
+    file: null,
+    data: null
   };
-  const detectionResult = await Rekognition.detectLabels(params).promise();
-  const labelNames = detectionResult.Labels.map((l) => l.Name.toLowerCase()); 
-  return labelNames;
-}
 
-function storePhotoInfo(item) {
-    const params = {
-        Item: item,
-        TableName: DYNAMODB_PHOTOS_TABLE_NAME
+  const [state, dispatch] = useReducer(reducer, initalState);
+
+  function reducer(state, action) {
+    switch(action.type) {
+      case 'setFile':
+        return { ...state, file: action.file, data: action.data }
+      case 'setSrc':
+        return { ...state, src: action.url }
+      case 'reset':
+        return initalState;
+      default:
+        new Error();
+    }
+  }
+
+  function handlePick(data) {
+    const { file } = data;
+    dispatch({ type: 'setFile', file, data });
+
+    const reader = new FileReader();
+    reader.onload = function(e) {
+      const url = e.target.result;
+      dispatch({ type: 'setSrc', url });
     };
-    return DynamoDBDocClient.put(params).promise();
+    reader.readAsDataURL(file);
+  }
+
+  function handleClose() {
+    dispatch({ type: 'reset' })
+    if (onClose) {
+      onClose(); // follow through with parent onClose 
+    }
+  }
+
+  function doUpload() {
+    if (onPick) {
+      onPick(state.data);
+    }
+    dispatch({ type: 'reset' })
+  }
+
+  return (
+    <Modal size='small' closeIcon trigger={ trigger } open={ open } onClose={ handleClose }>
+      <Modal.Header>Add Photo</Modal.Header>
+      <Modal.Content image>        
+        <Modal.Description>
+          { state.src ? (
+            <ResultPane imageSrc={ state.src } file={ state.file } onUpload={ doUpload }/>
+          ) : (
+            <PhotoPicker onPick={ handlePick } />
+          )}
+        </Modal.Description>
+      </Modal.Content>
+    </Modal>
+  );
 }
 
-async function getMetadata(bucketName, key) {
-    const headResult = await S3.headObject({Bucket: bucketName, Key: key }).promise();
-    return headResult.Metadata;
-}
+export default MLPhotoPicker;
+```
 
-function thumbnailKey(filename) {
-    return `public/resized/${filename}`;
-}
+Next, modify `src/AlbumDetail.js` in two places to reference the new component. At the top of the file:
 
-function fullsizeKey(filename) {
-    return `public/${filename}`;
-}
+``` diff
+import { S3Image } from 'aws-amplify-react';
+import awsconfig from './aws-exports';
+import uuid from 'uuid/v4';
 
-function makeThumbnail(photo) {
-    return Sharp(photo).resize(THUMBNAIL_WIDTH, THUMBNAIL_HEIGHT).toBuffer();
-}
++ import MLPhotoPickerModal from './MLPhotoPickerModal';
+```
 
-async function resize(bucketName, key) {
-    const originalPhoto = (await S3.getObject({ Bucket: bucketName, Key: key }).promise()).Body;
-    const originalPhotoName = key.replace('uploads/', '');
-    const originalPhotoDimensions = await Sharp(originalPhoto).metadata();
+Then at the bottom of the file (you can safely ignore any unused warnings):
 
-    const thumbnail = await makeThumbnail(originalPhoto);
+``` diff
+return state.isLoading ? (
+    <p>loading...</p>
+  ) : (
+    <div>
+-      <Modal size='small' closeIcon
+-             open={openModal}
+-             onClose={() => { showModal(false) }}
+-             trigger={<Button primary floated='right' onClick={() => {showModal(true) }}>Add Photo</Button>}>
+-        <Modal.Header>Upload Photo</Modal.Header>
+-        <Modal.Content>
+-          { state.message }
+-          <PhotoPicker preview onPick={(data) => createPhoto(data, state, dispatch)} />
+-        </Modal.Content>
+-      </Modal>
++      { user && user.username === state.album.owner &&
++        <MLPhotoPickerModal
++            open={openModal}
++            onClose={() => { showModal(false) }}
++            trigger={ <Button primary floated='right' onClick={() => { showModal(true) }}>Add Photo</Button> }
++            onPick={ (data) => {
++              showModal(false);
++              createPhoto(data, state, dispatch);
++            }} /> }
 
-    await Promise.all([
-        S3.putObject({
-            Body: thumbnail,
-            Bucket: bucketName,
-            Key: thumbnailKey(originalPhotoName),
-        }).promise(),
+      <Header as='h1'>{ state.album.name }</Header>
 
-        S3.copyObject({
-            Bucket: bucketName,
-            CopySource: bucketName + '/' + key,
-            Key: fullsizeKey(originalPhotoName),
-        }).promise(),
-    ]);
+      <PhotoGrid photos={ state.photos } />
+    </div>
+  );
+```
 
-    await S3.deleteObject({
-        Bucket: bucketName,
-        Key: key
-    }).promise();
+Save your changes.
 
-    return {
-        photoId: originalPhotoName,
-        
-        thumbnail: {
-            key: thumbnailKey(originalPhotoName),
-            width: THUMBNAIL_WIDTH,
-            height: THUMBNAIL_HEIGHT
+Return to the application preview / React development server. Click on an album and then the "Add Photo" button to see the new photo picker (note that the picker is not fully functional yet):
+
+![Enhanced Photo Picker](/images/1_enhanced_photo_picker.png)
+
+Next, let's add machine learning to the photo picker. In `src/MLPhotoPickerModal.js`, find the comment `// TODO: Add Machine Learning` in the `ResultPane` component. Replace the comment with the following code. Here, we are using the Amplify Predictions module to identify entities, specifically celebrity faces, in the uploaded photo.
+
+``` js
+  if (!file) { return; }
+
+  setIsAnalyzing(true);
+
+  try {
+    // Use the Amplify Predictions model to identify entities in the photo
+    let result = await Predictions.identify({
+      entities: {
+        source: {
+          file
         },
+        celebrityDetection: true
+      }
+    });
 
-        fullsize: {
-            key: fullsizeKey(originalPhotoName),
-            width: originalPhotoDimensions.width,
-            height: originalPhotoDimensions.height
-        }
-    };
-};
+    const entities = result.entities;
+    let celebs = [];
+    let boxes = [];
 
-async function processRecord(record) {
-    const bucketName = record.s3.bucket.name;
-    const key = record.s3.object.key;
-    
-    if (key.indexOf('uploads') != 0) return;
-    
-    const metadata = await getMetadata(bucketName, key);
-    const sizes = await resize(bucketName, key);   
-    const labelNames = await getLabelNames(bucketName, sizes.fullsize.key);
-    const id = uuidv4();
-    const item = {
-        id: id,
-        owner: metadata.owner,
-        labels: labelNames,
-        photoAlbumId: metadata.albumid,
-        bucket: bucketName,
-        thumbnail: sizes.thumbnail,
-        fullsize: sizes.fullsize,
-        createdAt: new Date().getTime()
-    }
-    await storePhotoInfo(item);
-}
+    // For each found entity, capture celebrity name and face bounding box
+    entities.forEach(({ boundingBox, metadata: { name='' } }) => {
+      if (boundingBox) { boxes.push(boundingBox); }
+      if (name) { celebs.push(name); }
+    });
 
-exports.handler = async (event, context, callback) => {
-    try {
-        event.Records.forEach(processRecord);
-        callback(null, { status: 'Photo Processed' });
-    }
-    catch (err) {
-        console.error(err);
-        callback(err);
-    }
-};
-{{< /highlight >}}
-</div>
-### What we changed
-- Created an instance of *AWS.Rekognition* to interact with the Amazon Rekognition API
+    setBoundingBoxes(boxes);
+    setCelebrities(celebs);
+  } catch (error) {
+    console.error('[identify] ', error);
+  }
 
-- Added the *getLabelNames* function to use *Rekognition.detectLabels* to return a list of appropriate labels for a given photo on S3
+  setIsAnalyzing(false);
+```
 
-- Updated the *processPrcord* function to use the *getLabelNames* function to get labels for the photo and include them in the item record it persists to DynamoDB
+Save the file and refresh the page. 
 
-Our Photo Processor code now uses Amazon Rekognition's detectLabels API. But because we already added permissions for this action in the previous section, we won't need to update the CloudFormation template again.
+Click "Add Photo" again. Select the photo and wait for Rekognition to complete its analysis. Once finished, the new, machine learning-powered photo picker will display the celebrity's name and draw a bounding box around his or her face. Click the "Upload" button to add the celebrity photo to your photo album.
 
+![Jeff Bezos](/images/2_photo_picker_with_jeff_bezos.png)
 
-### Re-deploying the Photo Processor Lambda
+For today's workshop, the photo picker was tuned to identify celebrities, but you could also modify the application to identify family member or friends faces as well. To learn more about the changes required, check [Amplify documentation](https://aws-amplify.github.io/docs/js/predictions).
 
-**From the photoalbums directory, run:** `amplify push` to deploy an updated version of the Photo Processor function.
+Before moving on, let's commit our updates to source control. As we previously configured Amplify Console, the commit will trigger an update to the site within a few minutes. Enter the following in the second terminal tab:
 
-After the deploy finishes, try adding a new photo to an album. Then, go look at its row in the PhotoTable in DynamoDB and see if you see a labels property for the new upload. Hopefully you see some relevant labels for the photo!
+``` bash
+git add .
+```
+
+``` bash
+git commit -m "Add machine learning photo picker"
+```
+
+``` bash
+git push origin master
+```

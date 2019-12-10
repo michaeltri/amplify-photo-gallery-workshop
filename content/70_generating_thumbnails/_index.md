@@ -2,7 +2,7 @@
 title = "Generating Thumbnails"
 chapter = true
 weight = 70
-pre = "<b>todo </b>"
+pre = "<b>8. </b>"
 +++
 
 # Generating Thumbnails

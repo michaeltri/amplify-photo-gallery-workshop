@@ -4,440 +4,380 @@ chapter = false
 weight = 10
 +++
 
-Remember the Lambda function we created earlier? Now it's time to modify it so it can resize our uploded photos into thumbnails.
+## Adding a Lambda Trigger
 
-{{% notice warning %}}
-The instructions below use the text _S3Triggerxxxxxxx_ to indicate a pattern in your folders and files that you'll need to look for.
-<br/><br/>
-**The folders and files are not actually called S3Triggerxxxxxxx** but rather something like _S3Trigger1a2b3c4_ or similar, so please look
-in your filesystem to find the appropriate files. Hopefully it will be pretty obvious as you look for the files; there should only be
-one match for each of the items mentioned below.
-{{% /notice %}}
+Amplify supports Amazon S3 and DynamoDB triggers. This means you can invoke a Lambda function on create, update, and/or delete events from these sources. For our application, we will trigger a processing function whenever a new photo is uploaded to the storage bucket. The function will create a thumbnail version of the photo as well as capture and store [EXIF data](https://photographylife.com/what-is-exif-data), if available, from the photo.
 
+To get started, let's create a new Lambda function that will be triggered when a new photo is uploaded. Enter the following command in the second terminal tab (you can leave the React dev server running in the first tab):
 
+``` bash
+cd photoalbums
+```
 
-1. **Replace /home/ec2-user/environment/photoalbums/amplify/backend/function/S3Triggerxxxxxxx/src/index.js** with the following:
-<div style="height: 560px; overflow-y: scroll; margin: 0;">
-{{< highlight js >}}
-// amplify/backend/function/S3Triggerxxxxxxx/src/index.js
+``` bash
+amplify add function
+```
+* Provide a friendly name for your resource to be used as a label for this category in the project: __AmplifyPhotoProcessor__
+* Provide the AWS Lambda function name: __AmplifyPhotoProcessor__
+* Choose the function template that you want to use: __Hello world function__
+* Do you want to access other resources created in this project from your Lambda function? __Yes__
+* Select the category __api__
+* Select the operations you want to permit for AmplifyPhotosApi __read__
+* Do you want to edit the local lambda function now? __No__
 
+> TIP: Use the space bar to select `api` and `read` in the steps above. If these are not selected, your function will not work properly.
+
+Next, add a few dependencies for the function to enable image manipulation, read EXIF data, and to call AppSync:
+
+``` bash
+cd amplify/backend/function/AmplifyPhotoProcessor/src
+```
+
+``` bash
+npm install axios aws4 exif-reader --save
+```
+
+``` bash
+# install a pre-built version of Sharp for linux
+npm install --arch=x64 --platform=linux --target=10.15.0 sharp --save
+```
+
+Next, we will replace the boilerplate function with our photo processing code. The new function will (1) generate a thumbnail of the original image and (2) extract EXIF data (specifically geolocation) from the image file, when available.
+
+Open `amplify/backend/function/AmplifyPhotoProcessor/src/index.js` and replace the contents with the following, leaving the Amplify Params comment block at the top. The details of the function are beyond the scope of this workshop, but we have included comments in the code that describe the core functionality.
+
+#### amplify/backend/function/AmplifyPhotoProcessor/src/index.js
+
+``` js
 const AWS = require('aws-sdk');
-const S3 = new AWS.S3({ signatureVersion: 'v4' });
-const DynamoDBDocClient = new AWS.DynamoDB.DocumentClient({apiVersion: '2012-08-10'});
-const uuidv4 = require('uuid/v4');
+const axios = require('axios');
+const aws4 = require('aws4');
+const urlParse = require('url').URL;
+const sharp = require('sharp');
+const exifReader = require('exif-reader');
 
-/*
-Note: Sharp requires native extensions to be installed in a way that is compatible
-with Amazon Linux (in order to run successfully in a Lambda execution environment).
+const appSyncUrl = process.env.API_PHOTOALBUMS_GRAPHQLAPIENDPOINTOUTPUT;
+const appSyncHost = new urlParse(appSyncUrl).hostname.toString();
 
-If you're not working in Cloud9, you can follow the instructions on http://sharp.pixelplumbing.com/en/stable/install/#aws-lambda how to install the module and native dependencies.
-*/
-const Sharp = require('sharp');
+const THUMBNAIL_WIDTH = 300;
+const THUMBNAIL_HEIGHT = 300;
 
-// We'll expect these environment variables to be defined when the Lambda function is deployed
-const THUMBNAIL_WIDTH = parseInt(process.env.THUMBNAIL_WIDTH, 10);
-const THUMBNAIL_HEIGHT = parseInt(process.env.THUMBNAIL_HEIGHT, 10);
-const DYNAMODB_PHOTOS_TABLE_NAME = process.env.DYNAMODB_PHOTOS_TABLE_ARN.split('/')[1];
+let s3Client = null;
 
-function storePhotoInfo(item) {
-	const params = {
-		Item: item,
-		TableName: DYNAMODB_PHOTOS_TABLE_NAME
-	};
-	return DynamoDBDocClient.put(params).promise();
+//
+// Load image from S3 by passing bucket and key.
+//
+async function loadImage(bucket, key) {
+  const params = { Bucket: bucket, Key: key }
+  return await s3Client.getObject(params).promise()
 }
 
-async function getMetadata(bucketName, key) {
-	const headResult = await S3.headObject({Bucket: bucketName, Key: key }).promise();
-	return headResult.Metadata;
+//
+// Resize image to thumbnail and convert to JPEG; then put put in S3.
+//
+async function createThumbnail(bucket, key, image) {
+  const thumbKey = key.replace('images', 'thumbs').replace(/\.[^\.]+$/, '.jpg');
+
+  try {
+    // Use Sharp to resize the image to and convert to JPEG format
+    let thumb = await sharp(image)
+                        .resize(THUMBNAIL_WIDTH, THUMBNAIL_HEIGHT)
+                        .jpeg()
+                        .toBuffer();
+              
+    await s3Client.putObject({ Bucket: bucket, Key: thumbKey, Body: thumb }).promise();
+    return {
+      bucket: bucket,
+      key: thumbKey.substring(thumbKey.indexOf('thumbs')),
+      region: process.env.REGION
+    };
+  } catch (error) {
+    console.error('[createThumbnail] ', error);
+    throw error;
+  }
 }
 
-function thumbnailKey(filename) {
-	return `public/resized/${filename}`;
+
+//
+// Retrieve metadata and EXIF data from image.
+//
+async function getPhotoMetadata(image) {
+  try {
+    const metadata = await sharp(image).metadata();
+
+    let result = {
+      height: metadata.height,
+      width: metadata.width
+    };
+
+    const gps = getGpsData(metadata);
+    if (gps) { result['gps'] = gps; }
+    return result;
+  } catch (error) {
+    console.error('[storeExifData] ', error);
+    return null;
+  }
 }
 
-function fullsizeKey(filename) {
-	return `public/${filename}`;
+//
+//
+//
+function getGpsData(metadata) {
+  let result = null;
+
+  try {
+    const gps = exifReader(metadata.exif).gps;
+    result = {
+        latitude: `${gps.GPSLatitude[0]}°${gps.GPSLatitude[1]}'${gps.GPSLatitude[2]}"${gps.GPSLatitudeRef}`,
+        longitude: `${gps.GPSLongitude[0]}°${gps.GPSLongitude[1]}'${gps.GPSLongitude[2]}"${gps.GPSLongitudeRef}`,
+        altitude: gps.GPSAltitude
+    }
+  } catch (error) {
+    console.warn('Failed to get EXIF data, may not exist');
+  }
+
+  return result;
 }
 
-function makeThumbnail(photo) {
-	return Sharp(photo).resize(THUMBNAIL_WIDTH, THUMBNAIL_HEIGHT).toBuffer();
+//
+// GraphQL mutation to update photo record properties.
+//
+const updatePhotoMutation =
+`mutation UpdatePhoto($input: UpdatePhotoInput!) {
+  updatePhoto(input: $input) {
+    id
+    createdAt
+    updatedAt
+    gps {
+      latitude
+      longitude
+      altitude
+    }
+    thumbnail {
+      key
+    }
+  }
+}`;
+
+//
+// Store thumbnail and metadata via AppSync.
+//
+async function updatePhotoRecord(photoId, metadata, thumbnail) {
+  let mutation = {
+    query: updatePhotoMutation,
+    operationName: 'UpdatePhoto',
+    variables: {
+      input: {
+        id: photoId,
+        ...metadata,
+        thumbnail
+      }
+    }
+  };
+
+  let request = aws4.sign({
+    method: 'POST',
+    url: appSyncUrl,
+    host: appSyncHost,
+    path: '/graphql',
+    headers: {
+      'Content-Type': 'application/json'
+    },
+    service: 'appsync',
+    data: mutation,
+    body: JSON.stringify(mutation)
+  });
+  delete request.headers['Host'];
+  delete request.headers['Content-Length'];
+
+  let result = await axios(request);
+  console.log(JSON.stringify(result.data));
+  if (result.errors && result.errors.length > 0) {
+    console.error(`[updatePhotoRecord] ${result.errors[0].message}`);
+    throw new Error(`AppSync error - ${result.errors[0].errorType}: ${result.errors[0].message}`);
+  }
 }
 
-async function resize(bucketName, key) {
-	const originalPhoto = (await S3.getObject({ Bucket: bucketName, Key: key }).promise()).Body;
-	const originalPhotoName = key.replace('uploads/', '');
-	const originalPhotoDimensions = await Sharp(originalPhoto).metadata();
+//
+// Main handler for Lambda function.
+//
+exports.handler = async (event) => {
+  const bucket = event.Records[0].s3.bucket.name; //eslint-disable-line
+  const key = decodeURIComponent(event.Records[0].s3.object.key.replace(/\+/g, " ")); //eslint-disable-line
 
-	const thumbnail = await makeThumbnail(originalPhoto);
+  if (key.indexOf('thumb') > 0) { return { status: 'skipped', key }; }
 
-	await Promise.all([
-		S3.putObject({
-			Body: thumbnail,
-			Bucket: bucketName,
-			Key: thumbnailKey(originalPhotoName),
-		}).promise(),
+  if (!s3Client)  { s3Client = new AWS.S3() }
 
-		S3.copyObject({
-			Bucket: bucketName,
-			CopySource: bucketName + '/' + key,
-			Key: fullsizeKey(originalPhotoName),
-		}).promise(),
-	]);
+  try {
+    let image = await loadImage(bucket, key);
 
-	await S3.deleteObject({
-		Bucket: bucketName,
-		Key: key
-	}).promise();
+    // create a thumbnail of the original image and store in S3
+    // and capture metadata from original photo - take advantage of parallelism
+    let [thumb, metadata] = await Promise.all([
+        createThumbnail(bucket, key, image.Body),
+        getPhotoMetadata(image.Body)
+      ]);
 
-	return {
-		photoId: originalPhotoName,
-		
-		thumbnail: {
-			key: thumbnailKey(originalPhotoName),
-			width: THUMBNAIL_WIDTH,
-			height: THUMBNAIL_HEIGHT
-		},
+    // finally, update the record in DynamoDB via AppSync
+    await updatePhotoRecord(image.Metadata.photoid, metadata, thumb);
+  } catch (error) {
+    console.error(JSON.stringify(error));
+    console.error('An error occurred');
+    return error;
+  }
 
-		fullsize: {
-			key: fullsizeKey(originalPhotoName),
-			width: originalPhotoDimensions.width,
-			height: originalPhotoDimensions.height
-		}
-	};
+  return { status: 'complete', key };
 };
+```
 
-async function processRecord(record) {
-	const bucketName = record.s3.bucket.name;
-	const key = record.s3.object.key;
-	
-	if (key.indexOf('uploads') != 0) return;
-	
-	const metadata = await getMetadata(bucketName, key);
-	const sizes = await resize(bucketName, key);    
-	const id = uuidv4();
-	const item = {
-		id: id,
-		owner: metadata.owner,
-		photoAlbumId: metadata.albumid,
-		bucket: bucketName,
-		thumbnail: sizes.thumbnail,
-		fullsize: sizes.fullsize,
-		createdAt: new Date().getTime()
-	}
-	await storePhotoInfo(item);
+Be sure to save the file before moving on.
+
+With the function code written, we will configure the Lambda function to be invoked when new photos are put in the storage bucket. (Note: we could have also configured the trigger when adding storage earlier as well)
+
+``` bash
+cd ~/environment/photoalbums
+```
+
+``` bash
+amplify storage update
+```
+
+* Please select from one of the below mentioned services __Content (Images, audio, video, etc.)__
+* Who should have access: __Auth users only__
+* What kind of access do you want for Authenticated users? __create/update, read, delete__
+* Do you want to add a Lambda Trigger for your S3 Bucket? __Yes__
+* Select from the following options __Choose an existing function from the project__
+* Select from the following options __AmplifyPhotoProcessor__
+
+### Tweaking function configuration
+
+We need to tweak the CloudFormation template generated by Amplify for the `AmplifyPhotoProcessor` function. Because our function deals with image manipulation, we are going to increase memory provided to the function. We are also going to modify the execution policy of the function to allow it to run GraphQL operations.
+
+Open the CloudFormation template at `amplify/backend/function/AmplifyPhotoProcessor/AmplifyPhotoProcessor-cloudformation-template.json` and carefully make the following changes:
+
+``` diff
+"Runtime": "nodejs10.x",
++ "MemorySize": 1536,
+"Timeout": "25"
+```
+
+And
+
+``` diff
+"Effect": "Allow",
+"Action": [
+- "appsync:Get*"
+- "appsync:List*"            
++ "appsync:GraphQL"
+],
+"Resource": [
+```
+
+### Update cloud resources
+
+Next, update cloud resources with the `push` command. We will be creating the Lambda function and updating storage to invoke the function on photo upload.
+
+``` bash
+amplify push
+```
+
+The status of your resources should be as shown below:
+
+``` bash
+| Category | Resource name         | Operation | Provider plugin   |
+| -------- | --------------------- | --------- | ----------------- |
+| Function | AmplifyPhotoProcessor | Create    | awscloudformation |
+| Storage  | AmplifyPhotoStorage   | Update    | awscloudformation |
+| Auth     | amplifyphotosabcde123 | No Change | awscloudformation |
+| Api      | AmplifyPhotosApi      | No Change | awscloudformation |
+```
+
+* Are you sure you want to continue? __Y__
+
+When finished `push` is finished, go back to the browser and click on the first album you created earlier. Click the "Add Photo" button and upload a photo of your choosing. Unlike the previous photo upload, this one will trigger the Lambda function we just created, which will create a thumbnail of the image.
+
+> TIP: You can restart the React dev server using `npm start`.
+
+
+## Enhancing our User Interface
+
+Now that we have extended our application to generate a thumbnail and capture useful metadata about each photo, let's enhance the user interface.
+
+To begin, we will refine the `getAlbum` query generated by Amplify to only retrieve the data required for the screen. Particularly in mobile environments, retrieving only the needed data and no more can reduce the latency of your application.
+
+Open `src/graphql/queries.js` and replace the `getAlbum` query as follows and save updates:
+
+``` js
+export const getAlbum = `query GetAlbum($id: ID!) {
+  getAlbum(id: $id) {
+    id
+    owner
+    ownerId
+    name
+    createdAt
+    photos {
+      items {
+        id
+        createdAt
+        thumbnail {
+          key
+        }
+        fullsize {
+          key
+        }
+        gps {
+          latitude
+          longitude
+        }
+      }
+      nextToken
+    }
+  }
 }
+`;
+```
 
-exports.handler = async (event, context, callback) => {
-	try {
-		event.Records.forEach(processRecord);
-		callback(null, { status: 'Photo Processed' });
-	}
-	catch (err) {
-		console.error(err);
-		callback(err);
-	}
+Next, open `src/AlbumDetail.js` and modify the `PhotoCard` component as follows:
+
+``` js
+function PhotoCard(props) {
+  const [src, setSrc] = useState('');
+  const { createdAt, gps, fullsize, thumbnail } = props.photo;
+
+  return (
+    <Card>
+      <S3Image hidden level='protected' imgKey={ thumbnail ? thumbnail.key : fullsize.key } onLoad={ url => setSrc(url) } />
+      <Image src={ src } />
+      <Card.Content extra>
+        <p><Icon name='calendar' /> { createdAt }</p>
+        { gps &&
+            <p><Icon name='globe' /> { gps.latitude } { gps.longitude } </p>
+        }
+      </Card.Content>
+    </Card>
+  );
 };
-{{< /highlight >}}
-</div>
+```
 
+Save the file, and if necessary, refresh the page. The Album Detail page should now include a thumbnail view of the second uploaded photo, along with geolocation data if available (note that some images will not include EXIF data for various reasons). The first photo will not have a thumbnail version of the image.
 
-3. **Replace /home/ec2-user/environment/photoalbums/amplify/backend/function/S3Triggerxxxxxxx/src/package.json** with the following:
-```json
-{
-	"name": "S3TriggerPhotoProcessor",
-	"version": "1.0.0",
-	"description": "The photo uploads processor",
-	"main": "index.js",
-	"dependencies": {
-		"sharp": "^0.20.2",
-		"uuid": "^3.3.2"
-	}
-}
+### Checkin and push the changes
+
+```
+git status
+```
+
+```
+git add .
+```
+
+```
+git commit -m 'view photo thumbnails'
+```
+
+```
+git push origin master
 ```
 
 
-4. **From the photoalbums directory, run:** `amplify function build` and press Enter to confirm. This will take care of installing the dependencies in our Lambda function's package.json.
-
-
-8.  **Replace photoalbums/amplify/backend/function/S3Triggerxxxxxxx/S3Triggerxxxxxxx-cloudformation-template.json** with the following:
-<div style="height: 550px; overflow-y: scroll;">
-{{< highlight json "hl_lines=4-14 29-36 100-183">}}
-{
-	"AWSTemplateFormatVersion": "2010-09-09",
-	"Description": "Lambda resource stack creation using Amplify CLI",
-	"Parameters": {
-		"env": {
-			"Type": "String"
-		},
-		"DynamoDBPhotoTableArn": {
-			"Type": "String",
-			"Default": "DYNAMODB_PHOTO_TABLE_ARN_PLACEHOLDER"
-		}
-	},
-	"Conditions": {
-		"ShouldNotCreateEnvResources": {
-			"Fn::Equals": [
-				{
-					"Ref": "env"
-				},
-				"NONE"
-			]
-		}
-	},
-	"Resources": {
-		"LambdaFunction": {
-			"Type": "AWS::Lambda::Function",
-			"Metadata": {
-				"aws:asset:path": "./src",
-				"aws:asset:property": "Code"
-			},
-			"Properties": {
-				"Handler": "index.handler",
-				"FunctionName": {
-					"Fn::If": [
-						"ShouldNotCreateEnvResources",
-						"S3_TRIGGER_NAME_PLACEHOLDER",
-						{
-							"Fn::Join": [
-								"",
-								[
-									"S3_TRIGGER_NAME_PLACEHOLDER",
-									"-",
-									{
-										"Ref": "env"
-									}
-								]
-							]
-						}
-					]
-				},
-				"Environment": {
-					"Variables": {
-						"ENV": {
-							"Ref": "env"
-						},
-						"THUMBNAIL_WIDTH": "80",
-						"THUMBNAIL_HEIGHT": "80",
-						"DYNAMODB_PHOTOS_TABLE_ARN": { "Ref" : "DynamoDBPhotoTableArn" }
-					}
-				},
-				"Role": {
-					"Fn::GetAtt": [
-						"LambdaExecutionRole",
-						"Arn"
-					]
-				},
-				"Runtime": "nodejs8.10",
-				"Timeout": "25"
-			}
-		},
-		"LambdaExecutionRole": {
-			"Type": "AWS::IAM::Role",
-			"Properties": {
-				"RoleName": {
-					"Fn::If": [
-						"ShouldNotCreateEnvResources",
-						"S3_TRIGGER_NAME_PLACEHOLDERLambdaRole66924eb7",
-						{
-							"Fn::Join": [
-								"",
-								[
-									"S3_TRIGGER_NAME_PLACEHOLDERLambdaRole66924eb7",
-									"-",
-									{
-										"Ref": "env"
-									}
-								]
-							]
-						}
-					]
-				},
-				"AssumeRolePolicyDocument": {
-					"Version": "2012-10-17",
-					"Statement": [
-						{
-							"Effect": "Allow",
-							"Principal": {
-								"Service": [
-									"lambda.amazonaws.com"
-								]
-							},
-							"Action": [
-								"sts:AssumeRole"
-							]
-						}
-					]
-				}
-			}
-		},
-		"lambdaexecutionpolicy": {
-			"DependsOn": [
-				"LambdaExecutionRole"
-			],
-			"Type": "AWS::IAM::Policy",
-			"Properties": {
-				"PolicyName": "lambda-execution-policy",
-				"Roles": [
-					{
-						"Ref": "LambdaExecutionRole"
-					}
-				],
-				"PolicyDocument": {
-					"Version": "2012-10-17",
-					"Statement": [
-						{
-							"Effect": "Allow",
-							"Action": [
-								"logs:CreateLogGroup",
-								"logs:CreateLogStream",
-								"logs:PutLogEvents"
-							],
-							"Resource": {
-								"Fn::Sub": [
-									"arn:aws:logs:${region}:${account}:log-group:/aws/lambda/${lambda}:log-stream:*",
-									{
-										"region": {
-											"Ref": "AWS::Region"
-										},
-										"account": {
-											"Ref": "AWS::AccountId"
-										},
-										"lambda": {
-											"Ref": "LambdaFunction"
-										}
-									}
-								]
-							}
-						}
-					]
-				}
-			}
-		},
-		"AllPrivsForDynamo": {
-			"DependsOn": [
-				"LambdaExecutionRole"
-			],
-			"Type": "AWS::IAM::Policy",
-			"Properties": {
-				"PolicyName": "AllPrivsForDynamo",
-				"Roles": [
-					{
-						"Ref": "LambdaExecutionRole"
-					}
-				],
-				"PolicyDocument": {
-					"Version": "2012-10-17",
-					"Statement": [
-						{
-							"Effect": "Allow",
-							"Action": [
-								"dynamodb:*"
-							],
-							"Resource": { "Ref" : "DynamoDBPhotoTableArn" }
-						}
-					]
-				}
-			}
-		},
-		"RekognitionDetectLabels": {
-			"DependsOn": [
-				"LambdaExecutionRole"
-			],
-			"Type": "AWS::IAM::Policy",
-			"Properties": {
-				"PolicyName": "RekognitionDetectLabels",
-				"Roles": [
-					{
-						"Ref": "LambdaExecutionRole"
-					}
-				],
-				"PolicyDocument": {
-					"Version": "2012-10-17",
-					"Statement": [
-						{
-							"Effect": "Allow",
-							"Action": [
-								"rekognition:detectLabels"
-							],
-							"Resource": "*"
-						}
-					]
-				}
-			}
-		}
-	},
-	"Outputs": {
-		"Name": {
-			"Value": {
-				"Ref": "LambdaFunction"
-			}
-		},
-		"Arn": {
-			"Value": {
-				"Fn::GetAtt": [
-					"LambdaFunction",
-					"Arn"
-				]
-			}
-		},
-		"Region": {
-			"Value": {
-				"Ref": "AWS::Region"
-			}
-		},
-		"LambdaExecutionRole": {
-			"Value": {
-				"Ref": "LambdaExecutionRole"
-			}
-		}
-	}
-}
-{{< /highlight >}}
-</div>
-
-9. The Cloud Formation template you just pasted above contains some placeholder text that needs to be replaced with values specific for your environment. **Run the following commands** on the terminal of your Cloud9 IDE from the same **photoalbums** directory you've been working on:
-	```bash
-	AMPLIFY_ENV=$(jq -r '.envName' amplify/.config/local-env-info.json)
-
-	REGION=$(jq -r '.providers.awscloudformation.Region' amplify/backend/amplify-meta.json)
-
-	STACK_ID=$(jq -r '.providers.awscloudformation.StackId' amplify/backend/amplify-meta.json)
-
-	ACCOUNT_ID=$(echo $STACK_ID | sed -r 's/^arn:aws:(.+):(.+):(.+):stack.+$/\3/')
-
-	API_ID=$(jq -r '.api.photoalbums.output.GraphQLAPIIdOutput' amplify/backend/amplify-meta.json)
-
-	DYNAMO_DB_PHOTO_TABLE_ARN="arn:aws:dynamodb:$REGION:$ACCOUNT_ID:table/Photo-$API_ID-$AMPLIFY_ENV"
-
-	S3_TRIGGER_NAME=$(jq -r '.function | to_entries[] | .key' amplify/backend/amplify-meta.json)
-
-	sed -i "s/S3_TRIGGER_NAME_PLACEHOLDER/$S3_TRIGGER_NAME/g" amplify/backend/function/$S3_TRIGGER_NAME/$S3_TRIGGER_NAME-cloudformation-template.json
-
-	sed -i "s,DYNAMODB_PHOTO_TABLE_ARN_PLACEHOLDER,$DYNAMO_DB_PHOTO_TABLE_ARN,g" amplify/backend/function/$S3_TRIGGER_NAME/$S3_TRIGGER_NAME-cloudformation-template.json
-	```
-
-9. **From the photoalbums directory, run:** `amplify push` to deploy our new function.
-
-10. Wait for the deploy to finish. This step usually only takes about a minute or two.
-
-### What we changed
-- Added parameters *env*, *DynamoDBPhotosTableArn* to the Photo Processor function's CloudFormation template
-
-- Added environment variables to the Photo Processor function's configuration: *THUMBNAIL_WIDTH*, *THUMBNAIL_HEIGHT*, *DYNAMODB_PHOTOS_TABLE_ARN*
-
-- Added an *AllPrivsForDynamo* IAM policy to grant the function's role read and write access to the DynamoDB table containing information about our photos
-
-- Added a *RekognitionDetectLabels* IAM policy to grant the function's role permission to use the detectLabels API from Amazon Rekognition. This policy isn't used yet, but we're going to add it here for convenience while we're working with this file so we won't need to come back and add it when we get to the next section that involves automatically tagging our photos with AI.
-
-{{% notice warning %}}
-The AWS Amplify CLI manages the cloud resources in our project by generating CloudFormation templates for us. CloudFormation templates are very helpful, because they specify all of our project's infrastrucutre as code in the form of JSON and/or YAML files. In this workshop, we'll continue to make edits to some of these generated CloudFormation templates like we did in the steps above. 
-<br/> <br/>
-Beware that not all changes are safe to make, and the Amplify CLI may overwrite edits you make in some CloudFormation templates. All of the changes we make in this workshop will persist and won't get overwritten by Amplify because we're not issuing any commands to re-configure or remove any of the resources we're editing, but it's good to remember that this sort of thing _can_ happen if you attempt to use the CLI to re-configure a resource you've already generated with Amplify.
-{{% /notice %}}
-
-### Try uploading another photo
-
-With these changes completed, we should be able to upload a photo and see our Photo Processor function execute automatically. Try uploading a photo to an album, wait a moment, then refresh the page to see if the album renders the newly uploaded photo. If you see a photo, it means that our Photo Processor function was automatically triggered by the upload, it created a thumbnail, and it added all of the photo information to the DynamoDB table that our AppSync API reads from for resolving Photos. 
-
-Refreshing the album view in order to see new photos isn’t a great user experience, but this workshop has a lot of material already and there’s still more to cover in the next section, too. In short, one way to handle this with another AppSync subscription would be to have our photo processor Lambda function trigger a mutation on our AppSync API, and to have the AlbumDetailsLoader component subscribe to that mutation. However, because we’re using Amazon Cognito User Pool authentication for our AppSync API, the only way to have our Lambda function trigger such a mutation would be to create a sort of ‘system’ user (through the normal user sign up and confirmation process), store that user’s credentials securely (perhaps in AWS Secrets Manager), and authenticate to our AppSync API as that user inside our Lambda in order to trigger the mutation. For simplicity's sake, we'll stick to just refreshing the album view for this workshop.

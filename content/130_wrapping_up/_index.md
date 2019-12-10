@@ -2,7 +2,7 @@
 title = "Wrapping Up"
 chapter = true
 weight = 130
-pre = "<b>todo </b>"
+pre = "<b>11. </b>"
 +++
 
 # Wrapping Up

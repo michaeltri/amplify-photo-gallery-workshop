@@ -2,7 +2,7 @@
 title = "Adding AI"
 chapter = true
 weight = 110
-pre = "<b>todo </b>"
+pre = "<b>9. </b>"
 +++
 
 # Adding AI
