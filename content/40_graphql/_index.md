@@ -2,7 +2,7 @@
 title = "Creating a GraphQL API"
 chapter = true
 weight = 40
-pre = "<b>todo </b>"
+pre = "<b>5. </b>"
 +++
 
 # Creating a GraphQL API
