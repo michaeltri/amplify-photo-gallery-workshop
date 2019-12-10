@@ -16,6 +16,20 @@ Here's what it will look like when we render our list of Albums:
 
 ![Rendering a list of albums in our app](/images/app-albums-screen.png?classes=border)
 
+### Generate GraphQL queries, mutations, event handlers
+
+```
+amplify add codegen
+```
+
+```
+? Choose the code generation language target javascript
+? Enter the file name pattern of graphql queries, mutations and subscriptions src/graphql/**/*.js
+? Do you want to generate/update all possible GraphQL operations - queries, mutations and subscriptions Yes
+? Enter maximum statement depth [increase from default if your schema is deeply nested] 5
+✔ Generated GraphQL operations successfully and saved at src/graphql
+```
+
 ### Updating our App
 
 Let's update our front-end to:
@@ -23,245 +37,379 @@ Let's update our front-end to:
 - show a list of albums
 - allow users to click into an album to view its details
 
-**From the photoalbums directory, run** `npm install --save react-router-dom` to **add a new dependency** for routing. 
-
-{{% notice note %}}
-Usually, we'd create separate files for each of our components, but here we'll just keep everything together so we can see all of the front end code in one place.
-{{% /notice %}}
-
-
 **Replace photoalbums/src/App.js** with the following updated version:
 <div style="height: 660px; overflow-y: scroll;">
 {{< highlight jsx "hl_lines=5 6 8 9 14-207">}}
 // src/App.js
 
-import React, { Component } from 'react';
+import React from 'react';
+import { Container, Menu } from 'semantic-ui-react';
+import { Router, Link } from "@reach/router";
 
-import { Grid, Header, Input, List, Segment } from 'semantic-ui-react';
-import {BrowserRouter as Router, Route, NavLink} from 'react-router-dom';
+import { withAuthenticator } from 'aws-amplify-react';
+import useAmplifyAuth from './useAmplifyAuth';
+import Albums from './Albums';
+import AlbumDetail from './AlbumDetail';
 
-import Amplify, { API, graphqlOperation } from 'aws-amplify';
-import { Connect, withAuthenticator } from 'aws-amplify-react';
+export const UserContext = React.createContext();
 
-import aws_exports from './aws-exports';
-Amplify.configure(aws_exports);
+function App() {
+  const { state: { user }, onSignOut } = useAmplifyAuth();
 
-function makeComparator(key, order='asc') {
-  return (a, b) => {
-    if(!a.hasOwnProperty(key) || !b.hasOwnProperty(key)) return 0; 
-
-    const aVal = (typeof a[key] === 'string') ? a[key].toUpperCase() : a[key];
-    const bVal = (typeof b[key] === 'string') ? b[key].toUpperCase() : b[key];
-
-    let comparison = 0;
-    if (aVal > bVal) comparison = 1;
-    if (aVal < bVal) comparison = -1;
-
-    return order === 'desc' ? (comparison * -1) : comparison
-  };
-}
-
-
-const ListAlbums = `query ListAlbums {
-    listAlbums(limit: 9999) {
-        items {
-            id
-            name
-        }
-    }
-}`;
-
-const SubscribeToNewAlbums = `
-  subscription OnCreateAlbum {
-    onCreateAlbum {
-      id
-      name
-    }
-  }
-`;
-
-
-const GetAlbum = `query GetAlbum($id: ID!) {
-  getAlbum(id: $id) {
-    id
-    name
-  }
-}
-`;
-
-
-class NewAlbum extends Component {
-  constructor(props) {
-    super(props);
-    this.state = {
-      albumName: ''
-      };
-    }
-
-  handleChange = (event) => {
-    let change = {};
-    change[event.target.name] = event.target.value;
-    this.setState(change);
-  }
-
-  handleSubmit = async (event) => {
-    event.preventDefault();
-    const NewAlbum = `mutation NewAlbum($name: String!) {
-      createAlbum(input: {name: $name}) {
-        id
-        name
-      }
-    }`;
-    
-    const result = await API.graphql(graphqlOperation(NewAlbum, { name: this.state.albumName }));
-    console.info(`Created album with id ${result.data.createAlbum.id}`);
-    this.setState({ albumName: '' })
-  }
-
-  render() {
-    return (
-      <Segment>
-        <Header as='h3'>Add a new album</Header>
-          <Input
-          type='text'
-          placeholder='New Album Name'
-          icon='plus'
-          iconPosition='left'
-          action={{ content: 'Create', onClick: this.handleSubmit }}
-          name='albumName'
-          value={this.state.albumName}
-          onChange={this.handleChange}
-          />
-        </Segment>
-      )
-    }
-}
-
-
-class AlbumsList extends React.Component {
-  albumItems() {
-    return this.props.albums.sort(makeComparator('name')).map(album =>
-      <List.Item key={album.id}>
-        <NavLink to={`/albums/${album.id}`}>{album.name}</NavLink>
-      </List.Item>
+  function UserData(props) {
+    return !user ? (
+      <div></div>
+    ) : (
+      <div>Welcome {user.username} (<Link to="/" onClick={onSignOut}>Sign Out</Link>)</div>
     );
   }
 
-  render() {
-    return (
-      <Segment>
-        <Header as='h3'>My Albums</Header>
-        <List divided relaxed>
-          {this.albumItems()}
-        </List>
-      </Segment>
-    );
-  }
+  return (
+    <div>
+      <Menu fixed='top' borderless inverted>
+        <Container>
+          <Menu.Item as={Link} to='/' header>
+            Amplify Photo Album
+          </Menu.Item>
+
+          <Menu.Menu position='right'>
+            <Menu.Item>
+              <UserData></UserData>
+            </Menu.Item>
+          </Menu.Menu>
+        </Container>
+      </Menu>
+
+      <Container text style={{ marginTop: '5em' }}>
+        <UserContext.Provider user={ user }>
+          <Router>
+            <Albums path='/' user={ user } />
+            <AlbumDetail path='/album/:albumId' user={ user } />
+          </Router>
+        </UserContext.Provider>
+      </Container>    
+    </div>
+  );
 }
 
-
-class AlbumDetailsLoader extends React.Component {
-  render() {
-    return (
-      <Connect query={graphqlOperation(GetAlbum, { id: this.props.id })}>
-        {({ data, loading }) => {
-          if (loading) { return <div>Loading...</div>; }
-          if (!data.getAlbum) return;
-
-          return <AlbumDetails album={data.getAlbum} />;
-        }}
-      </Connect>
-    );
-  }
-}
-
-
-class AlbumDetails extends Component {
-  render() {
-    return (
-      <Segment>
-        <Header as='h3'>{this.props.album.name}</Header>
-        <p>TODO: Allow photo uploads</p>
-        <p>TODO: Show photos for this album</p>
-      </Segment>
-    )
-  }
-}
-
-
-class AlbumsListLoader extends React.Component {
-    onNewAlbum = (prevQuery, newData) => {
-        // When we get data about a new album, we need to put in into an object 
-        // with the same shape as the original query results, but with the new data added as well
-        let updatedQuery = Object.assign({}, prevQuery);
-        updatedQuery.listAlbums.items = prevQuery.listAlbums.items.concat([newData.onCreateAlbum]);
-        return updatedQuery;
-    }
-
-    render() {
-        return (
-            <Connect 
-                query={graphqlOperation(ListAlbums)}
-                subscription={graphqlOperation(SubscribeToNewAlbums)} 
-                onSubscriptionMsg={this.onNewAlbum}
-            >
-                {({ data, loading }) => {
-                    if (loading) { return <div>Loading...</div>; }
-                    if (!data.listAlbums) return;
-
-                return <AlbumsList albums={data.listAlbums.items} />;
-                }}
-            </Connect>
-        );
-    }
-}
-
-
-class App extends Component {
-  render() {
-    return (
-      <Router>
-        <Grid padded>
-          <Grid.Column>
-            <Route path="/" exact component={NewAlbum}/>
-            <Route path="/" exact component={AlbumsListLoader}/>
-
-            <Route
-              path="/albums/:albumId"
-              render={ () => <div><NavLink to='/'>Back to Albums list</NavLink></div> }
-            />
-            <Route
-              path="/albums/:albumId"
-              render={ props => <AlbumDetailsLoader id={props.match.params.albumId}/> }
-            />
-          </Grid.Column>
-        </Grid>
-      </Router>
-    );
-  }
-}
-
-export default withAuthenticator(App, {includeGreetings: true});
+export default withAuthenticator(App, { signUpConfig: { hiddenDefaults: ['phone_number'] } });
 {{< /highlight >}}
 </div>
 
-### What we changed in src/App.js
 
-- Imported the *Connect* component from aws-amplify-react
+**Add a new file  photoalbums/src/Albums.js** with the code:
+<div style="height: 660px; overflow-y: scroll;">
+{{< highlight jsx "hl_lines=5 6 8 9 14-207">}}
+// src/Albums.js
 
-- Imported more presentational components from *semantic-ui-react*
+import React, { useEffect, useReducer } from 'react';
+import { Button, Form, Grid, Header, Input } from 'semantic-ui-react';
+import { API, graphqlOperation } from 'aws-amplify';
+import { Link } from "@reach/router";
 
-- Imported *API* and *graphqlOperation* from *aws-amplify*
+import { listAlbums as listAlbumsQuery } from './graphql/queries';
+import { createAlbum as createAlbumMutation } from './graphql/mutations';
+import { onCreateAlbum } from './graphql/subscriptions';
 
-- Imported routing components from *react-router-dom*
+const initalState = {
+  albums: [],
+  error: null,
+  // form inputs for new album...
+  newAlbumName: ''
+};
 
-- Added *makeComparator* to allow us to sanely sort strings in JS
+function reducer(state, action) {
+  switch(action.type) {
+    case 'set':
+      return { ...state, albums: action.albums }
+     case 'add':
+       return { ...state, albums: [ ...state.albums, action.album ] }      
+    case 'input':
+     return { ...state, [action.inputValue]: action.value }  
+    case 'reset':
+      return { ...state, [action.inputValue]: '' }
+    case 'error':
+      return { ...state, error: true }
+    default:
+      new Error();
+  }
+}
 
-- Added new components: *NewAlbum*, *AlbumsList*, *AlbumsDetailsLoader*, *AlbumDetails*, *AlbumsListLoader*
+async function listAlbums(dispatch) {
+  try {
+    const albumsData = await API.graphql(graphqlOperation(listAlbumsQuery));
+    dispatch({ type: 'set', albums: albumsData.data.listAlbums.items })
+  } catch(error) {
+    dispatch({ type: 'error' });
+    console.error('[ERROR - listAlbums] ', error);
+  }
+}
 
-- Added GraphQL queries and mutations: *ListAlbums*, *SubscribeToNewAlbums*, *GetAlbum*
+async function createAlbum(user, state, dispatch) {
+   const { newAlbumName } = state;
+   const newAlbum = {
+     name: newAlbumName,
+     owner: user.username,
+     ownerId: user.id
+   }
 
-- Updated the App component to present different components based on the current URL route
+   try {
+     await API.graphql(graphqlOperation(createAlbumMutation, { input: newAlbum }));
+     dispatch({ type: 'reset' });
+     console.log('New album created');
+   } catch (error) {
+     dispatch({ type: 'error' });
+     console.error('[ERROR - createAlbum] ', error);
+   }    
+}
+
+function update(value, inputValue, dispatch) {
+    dispatch({ type: 'input', value, inputValue });
+}
+
+function AlbumList(props) {
+  return (
+    <ul>
+      {
+        props.albums.map((album, i) => (
+          <li key={i}>
+            <Link to={'/album/' + album.id}>{album.name}</Link>
+          </li>
+        ))
+      }
+    </ul>
+  );
+}
+
+function Albums({ user }) {
+  const [state, dispatch] = useReducer(reducer, initalState);
+   useEffect(() => {
+      if (!user) { return; }
+        const { username } = user;
+        const subscription = API.graphql(graphqlOperation(onCreateAlbum, { owner: username })).subscribe({
+           next: (data) => {
+             const album = data.value.data.onCreateAlbum;
+             dispatch({ type: 'add', album });
+           }
+         });
+ 
+     return () => {
+       subscription.unsubscribe();
+     }
+   }, [user]);
+
+  useEffect(() => {
+    listAlbums(dispatch)
+  }, []);
+
+  return (
+    <div>
+      <Header as='h1'>My Albums</Header>
+
+      <Grid divided>
+        <Grid.Row>
+          <Grid.Column width={8}>
+            <AlbumList albums={state.albums} />
+          </Grid.Column>
+
+          <Grid.Column width={4}>
+            <Header as='h3'>Create Album</Header>
+
+            <Form>
+              <Form.Field>
+                <label>Name</label>
+                <Input placeholder='name'
+                  onChange={ e => update(e.target.value, 'newAlbumName', dispatch) }
+                  value={ state.newAlbumName } />
+              </Form.Field>
+              <Button primary onClick={() => createAlbum(user, state, dispatch)}>
+                Create
+              </Button>
+            </Form>
+          </Grid.Column>
+        </Grid.Row>
+      </Grid>
+    </div>
+  )
+};
+
+export default Albums;
+
+{{< /highlight >}}
+</div>
+
+**Add a new file  photoalbums/src/AlbumsDetail.js** with the code:
+<div style="height: 660px; overflow-y: scroll;">
+{{< highlight jsx "hl_lines=5 6 8 9 14-207">}}
+// src/AlbumDetail.js
+
+import React, { useEffect, useState, useReducer } from 'react';
+import { Button, Card, Header, Icon, Image, Message, Modal } from 'semantic-ui-react';
+import { API, Storage, graphqlOperation } from 'aws-amplify';
+import { S3Image, PhotoPicker } from 'aws-amplify-react';
+import awsconfig from './aws-exports';
+import uuid from 'uuid/v4';
+
+import { getAlbum as getAlbumQuery } from './graphql/queries';
+import { createPhoto as createPhotoMutation } from './graphql/mutations';
+
+function PhotoCard(props) {
+  const [src, setSrc] = useState('');
+  const { fullsize } = props.photo;
+
+  return (
+    <Card>
+      <S3Image hidden level='protected' imgKey={ fullsize.key } onLoad={ url => setSrc(url) } />
+      <Image src={ src } />
+    </Card>
+  );
+}
+
+function PhotoGrid(props) {
+  return (
+    <Card.Group itemsPerRow={3}>
+      {
+        props.photos.map((photo, i) => (
+          <PhotoCard key={ i } photo={ photo } />
+        ))
+      }
+    </Card.Group>
+  );
+}
+
+function AlbumDetail({ albumId, user }) {
+  const {
+    aws_user_files_s3_bucket_region: region,
+    aws_user_files_s3_bucket: bucket
+  } = awsconfig;
+  
+  const initalState = {
+    album: {},
+    photos: [],
+    isLoading: false,
+    message: '',
+    error: null
+  };
+
+  const [openModal, showModal] = useState(false);
+  const [state, dispatch] = useReducer(reducer, initalState);
+
+  // add subscription for new photos in this album
+
+  useEffect(() => {
+    dispatch({ type: 'init' });
+    getAlbum(albumId, dispatch);
+  }, [albumId]);
+  
+  function reducer(state, action) {
+    switch(action.type) {
+      case 'init':
+        return { ...state, isLoading: true };
+      case 'set':
+        return { 
+          ...state,
+          isLoading: false,
+          album: action.album,
+          photos: action.album.photos.items ? action.album.photos.items : []
+        };
+      case 'message':
+        return { ...state, message: action.message };
+      case 'error':
+        return { ...state, error: true };
+      default:
+        new Error();
+    }
+  }
+  
+  async function getAlbum(albumId, dispatch) {
+    try {
+      const albumData = await API.graphql(graphqlOperation(getAlbumQuery, { id: albumId }));
+      dispatch({ type: 'set', album: albumData.data.getAlbum });
+    } catch (error) {
+      dispatch({ type: 'error' });
+      console.error('[ERROR - getAlbum] ', error);
+    } 
+  }
+  
+  async function createPhoto(data, state, dispatch) {
+    if (data && data.file) {
+      const { file, type: mimeType } = data;
+      const extension = file.name.substr((file.name.lastIndexOf('.') + 1));
+      const photoId = uuid();
+      const key = `images/${photoId}.${extension}`;
+  
+      const inputData = {
+        id: photoId,
+        photoAlbumId: state.album.id,
+        contentType: mimeType,
+        fullsize: {
+          key: key,
+          region: region,
+          bucket: bucket
+        }
+      };
+  
+      try {
+        await Storage.put(key, file, { level: 'protected', contentType: mimeType, metadata: { albumId: state.album.id, photoId } });
+        await API.graphql(graphqlOperation(createPhotoMutation, { input: inputData }));
+        console.log(`Successfully created photo - ${photoId}`);
+        dispatch({ type: 'message', message: 'New photo created successfully' });
+        showModal(false);
+      } catch(error) {
+        console.error('[ERROR - createPhoto] ', error);
+      }
+    }
+  }
+
+  return state.isLoading ? (
+    <p>loading...</p>
+  ) : (
+    <div>
+      <Modal size='small' closeIcon
+             open={openModal}
+             onClose={() => { showModal(false) }}
+             trigger={<Button primary floated='right' onClick={() => {showModal(true) }}>Add Photo</Button>}>
+        <Modal.Header>Upload Photo</Modal.Header>
+        <Modal.Content>
+          <PhotoPicker preview onPick={(data) => createPhoto(data, state, dispatch)} />
+        </Modal.Content>
+      </Modal>
+    
+      <Header as='h1'>{ state.album.name }</Header>
+      { state.message &&
+        <Message><p>{ state.message }</p></Message> }
+      <PhotoGrid photos={ state.photos } />
+    </div>
+  );
+}
+
+export default AlbumDetail;
+
+{{< /highlight >}}
+</div>
+
+### Checkin and push the changes
+
+```
+git status
+```
+
+```
+git add .graphqlconfig.yml
+git add amplify/backend/api/
+git add amplify/backend/storage/
+git add src/AlbumDetail.js
+git add src/Albums.js
+git add src/graphql/
+```
+
+```
+git commit -am 'manage albums and upload photos'
+```
+
+```
+git push origin master
+```
 
 ### Try out the app
 
