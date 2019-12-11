@@ -45,6 +45,4 @@ If we were to try and build scalable and highly-available systems to handle each
 
 * [Amazon Rekognition](https://aws.amazon.com/rekognition/), to detect relevant labels for uploaded photos
 
-* [Amazon Elasticsearch Service](https://aws.amazon.com/elasticsearch-service/), to index and search our photos by their labels
-
 If any or all of these services are new to you, don't worry. We'll cover everything you need to know to get started using everything mentioned above. And there's no better way to learn than to build, so let's get started!

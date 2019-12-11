@@ -7,7 +7,7 @@ weight = 20
 ### Creating a React app
 We'll get things started by building a new React web app using the **create-react-app** CLI tool. 
 
-{{% notice info %}}
+{{% notice note %}}
 This will give us a sample React app with a local auto-reloading web server and some helpful transpiling support for the browser like letting us use async/await keywords, arrow functions, and more.
 {{% /notice %}}
 

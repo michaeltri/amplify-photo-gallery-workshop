@@ -52,7 +52,11 @@ Now we'll have Amplify modify our cloud environment, provisioning the storage re
 2. **Press Enter** to confirm the changes
 3. Wait for the provisioning to finish. Adding storage usually only takes a minute or two.
 
-### show image amplify console storage
+### View the created storage in the Amplify console
+
+![Amplify Storage](/images/amplify_storage.png)
+
+![Amplify Storage](/images/amplify_storage_details.png)
 
 {{% notice tip %}}
 You can read more about Amplify's Storage module [here](https://aws-amplify.github.io/amplify-js/media/storage_guide).

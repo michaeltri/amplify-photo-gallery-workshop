@@ -127,4 +127,8 @@ At this point, without having to write any code, we now have a GraphQL API that 
 But don't worry, the way AWS AppSync is resolving fields into data isn't hidden from us. Each resolver that was automatically generated is available for us to edit as we see fit, and we'll get to that later. For now, let's try out adding some albums and then retrieving them all as a list.
 {{% /notice %}}
 
-### Todo show amplify console for api
+### View your API in the Amplify console
+
+![Amplify API](/images/amplify_api.png)
+
+![Amplify API sync](/images/amplify_app_sync.png)

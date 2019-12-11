@@ -9,7 +9,7 @@ Now that we have a simple React app, let's let users sign up and sign in to our 
 Here's what the sign-in screen will look like:
 ![Here's what the sign-in screen looks like](/images/app-signin-screen.png?classes=border)
 
-{{% notice info %}}
+{{% notice note %}}
 This will create a new local configuration for us which we can use to set up an [Amazon Cognito](https://aws.amazon.com/cognito/) User Pool to act as the backend for letting users sign up and sign in. (More about Amazon Cognito and what a User Pool is below.) If you want to read more about this step, take a look at the 'Installation and Configuration' steps from the [AWS Amplify Authentication guide](https://aws-amplify.github.io/amplify-js/media/authentication_guide.html).
 {{% /notice %}}
 
@@ -29,13 +29,17 @@ This will create a new local configuration for us which we can use to set up an 
 
 3. Wait for the provisioning to complete. This will take a few minutes.
 
-{{% notice info %}}
+{{% notice note %}}
 The Amplify CLI will take care of provisioning the appropriate cloud resources and it will update src/aws-exports.js with all of the configuration data we need to be able to use the cloud resources in our app.
 {{% /notice %}}
 
 Congratulations! You've just created a serverless backend for user registration and authorization capable of scaling to millions of users with Amazon Cognito. 
 
-### todo add amplify Authentication screenshots
+### View your changes in the Amplify console
+
+![Amp Auth](/images/amplify_backend_auth.png)
+
+![Amp Auth](/images/amplify_backend_auth_details.png)
 
 {{% notice tip %}}
 Amazon Cognito lets you add user sign-up, sign-in, and access control to your web and mobile apps quickly and easily. We just made a User Pool, which is a secure user directory that will let our users sign in with the username and password pair they create during registration. Amazon Cognito (and the Amplify CLI) also supports configuring sign-in with social identity providers, such as Facebook, Google, and Amazon, and enterprise identity providers via SAML 2.0. If you'd like to learn more, we have a lot more information on the [Amazon Cognito Developer Resources page](https://aws.amazon.com/cognito/dev-resources/) as well as the [AWS Amplify Authentication documentation.](https://aws-amplify.github.io/amplify-js/media/authentication_guide#federated-identities-social-sign-in)

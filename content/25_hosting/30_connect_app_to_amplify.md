@@ -36,4 +36,12 @@ After several minutes, Amplify will have deployed the build and provided a link 
 
 ![Deployed Application](/images/8_finished_deploy.png)
 
-### todo deployed app in browser
+### View the deployed app
+
+![Deployed Application](/images/amplify_deployed_app.png)
+### Examine Build Details
+
+Click on 'master' to examine the build output:
+![Build Provision](/images/amplify_build_provision.png)
+
+

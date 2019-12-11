@@ -208,4 +208,12 @@ git commit -am 'added authentication'
 git push origin master
 ```
 
-#### todo add screen amplify build started
+### Sign up 
+
+Wait until the build and deployment are finished then signup:
+
+![Amplify Sign Up](/images/amplify_sign_up.png)
+
+### Our app so far
+
+![Amplify Sign Up](/images/amplify_auth_app.png)

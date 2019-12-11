@@ -6,7 +6,7 @@ weight = 5
 
 At this point, we have a web app that authenticates users and a secure GraphQL API endpoint that lets us create and read Album data. It's time to connect the two together!
 
-{{% notice info %}}
+{{% notice note %}}
 As we saw above, [AWS Amplify](https://aws.github.io/aws-amplify/) is an open source JavaScript library that makes it very easy to integrate a number of cloud services into your web or React Native apps. We'll start by using its [Connect React component](https://aws-amplify.github.io/docs/js/api#connect) to take care of automatically querying our GraphQL API and providing data for our React components to use when rendering.
 <br/><br/>
 The Amplify CLI has already taken care of making sure that our *src/aws-exports.js* file contains all of the configuration we'll need to pass to the Amplify JS library in order to talk to the AppSync API. All we'll need to do is add some new code to interact with the API.
@@ -388,7 +388,7 @@ export default AlbumDetail;
 {{< /highlight >}}
 </div>
 
-### Checkin and push the changes
+### Check-in and push your changes
 
 ```
 git status

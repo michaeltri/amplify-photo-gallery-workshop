@@ -5,6 +5,6 @@ weight = 20
 pre = "<b>3. </b>"
 +++
 
-# Getting Started
+# Hosting the App
 
 {{% children showhidden="false" %}}

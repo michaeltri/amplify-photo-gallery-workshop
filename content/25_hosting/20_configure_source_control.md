@@ -4,7 +4,7 @@ chapter = false
 weight = 20
 +++
 
-### Adding the source AWS CodeCommit
+### Adding the source to AWS CodeCommit
 
 At this point, we have the base app infrastructure setup. Amplify also provides a Git-based workflow for deploying and hosting fullstack serverless web applications via [Amplify Console](https://aws.amazon.com/amplify/console/).
 
@@ -43,4 +43,6 @@ git commit -m "Initial commit"
 git push origin master
 ```
 
-### todo show codecommit
+### AWS CodeCommit
+
+![amplify init](/images/amplify_code_commit.png)
