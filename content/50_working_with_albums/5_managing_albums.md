@@ -238,7 +238,7 @@ export default Albums;
 {{< /highlight >}}
 </div>
 
-**Add a new file  photoalbums/src/AlbumsDetail.js** with the code:
+**Add a new file  photoalbums/src/AlbumDetail.js** with the code:
 <div style="height: 660px; overflow-y: scroll;">
 {{< highlight jsx "hl_lines=5 6 8 9 14-207">}}
 // src/AlbumDetail.js
